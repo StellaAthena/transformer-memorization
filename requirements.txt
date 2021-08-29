@@ -1,2 +1,5 @@
+numpy
+matplotlib
+torch
 lm-dataformat
 transformers
