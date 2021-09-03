@@ -3,3 +3,5 @@ matplotlib
 torch
 lm-dataformat
 transformers
+knowledge-neurons
+lm-eval
