@@ -17,4 +17,4 @@ To support this effort, we have made several trained model checkpoints publicly 
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
-| 6,053,381,344 | 512        | 28         | 4,096     | 16        |                   |                    |     | 256      |
+| 6,053,381,344 | 512        | 28         | 4,096     | 16        | 16                | 1                  | 16  | 256      |
