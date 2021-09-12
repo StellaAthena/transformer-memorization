@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#gpt-j checkpoint (download and extract using the following command: gdown --id 1NXP75l1Xa5s9K18yf3qLoZcR6p4Wced1 -O - | tar -xvf -)
+j6b_ckpt/
