@@ -9,7 +9,7 @@ To support this effort, we have made several trained model checkpoints publicly 
 
 | Params        | Batch Size | Num Layers | Dim Model | Num Heads | Cores per Replica | Replicas per Batch | GAS | TPU Size |
 |:-------------:|:----------:|:----------:|:---------:|:---------:|:-----------------:|:------------------:|:---:|:--------:|
-| 162,675,296   | 512        | 12         | 768       | 16        | 8                 | 2                  | 8   | 256      |
+| 162,675,936   | 512        | 12         | 768       | 16        | 8                 | 2                  | 8   | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
