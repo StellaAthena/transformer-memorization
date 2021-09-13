@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoConfig, GPTNeoForCausalLM
 import torch
 import tensorflow as tf
 import numpy as np
@@ -8,6 +8,11 @@ import wandb
 from memorization_metric import memorization_metric
 import argparse
 from multiprocessing import Process,Pipe,set_start_method
+
+try:
+    from collections.abc import MutableMapping
+except ImportError:
+    from collections import MutableMapping
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Evaluates the memorization of input tfrecords based on the memorization metric')
@@ -29,6 +34,52 @@ def get_dataset_paths(args):
     else:
         raise ValueError("No tfrecord index file provided. Pleas provide a file to continue")
 
+
+def get_gptj_config():
+    config = AutoConfig.from_pretrained("EleutherAI/gpt-neo-2.7B")
+    config.attention_layers = ["global"] * 28
+    config.attention_types = [["global"], 28]
+    config.num_layers = 28
+    config.num_heads = 16
+    config.hidden_size = 256 * config.num_heads
+    config.vocab_size = 50400
+    config.rotary = True
+    config.rotary_dim = 64
+    config.jax = False
+    return config
+
+
+class Checkpoint(MutableMapping):
+    def __init__(self,device,path=None):
+        self.path = path
+        self.device = device
+        super().__init__()
+        if(self.path is not None and self.path != ""):
+            if(self.path[-1] != '/'): 
+                self.path += '/'
+            self.checkpoint = torch.load(self.path + "j6b_ckpt/m.pt", map_location="cpu")
+        else:
+            self.checkpoint = torch.load("j6b_ckpt/m.pt", map_location="cpu")
+            self.path = ""
+    def __len__(self):
+        return len(self.checkpoint)
+    def __getitem__(self, key):
+        return torch.load(self.path + self.checkpoint[key], map_location=torch.device(f"cuda:{self.device}"))
+    def __setitem__(self, key, value):
+        return
+    def __delitem__(self, key, value):
+        return
+    def keys(self):
+        return self.checkpoint.keys()
+    def __iter__(self):
+        for key in self.checkpoint:
+            yield (key, self.__getitem__(key))
+    def __copy__(self):
+        return Checkpoint(self.device,self.path)
+    def copy(self):
+        return Checkpoint(self.device,self.path)
+
+
 class ScoreModel(Process):
     """Parallelizes evaluation of the records
 
@@ -41,7 +92,12 @@ class ScoreModel(Process):
         self.model = None
         self.stop_scoring = False
         self.reciever, self.sender = Pipe()
+        self.config = get_gptj_config()
+        self.checkpoint = Checkpoint(device)
         super().__init__()
+    
+    def get_model(self):
+        self.model = GPTNeoForCausalLM.from_pretrained(pretrained_model_name_or_path=None, config=self.config, state_dict=self.checkpoint)
     def score(self,token_size):
         '''Evaluates the memorization metric of data from the Pipe()
 
@@ -49,9 +105,9 @@ class ScoreModel(Process):
         > uitlizes first token_size//2 tokens to generate next token_size//2 tokens and evaluates them
         '''
         while(True):
-            inp_tensor = self.reciever.recv().to(f'cuda:{self.device}')
-            inp = inp_tensor[:,:token_size//2]
-            ground_truth = inp_tensor[:,token_size//2:token_size]
+            inp_tensor = self.reciever.recv()
+            inp = inp_tensor[:,:token_size//2].to(f'cuda:{self.device}')
+            ground_truth = inp_tensor[:,token_size//2:token_size].to(f'cuda:{self.device}')
 
             #Generation takes a lot longer for no apparant reason
             res = self.model.generate(inp,do_sample=False, temperature=0.9,use_cache=False, min_length=2048,max_length=2048)[:,token_size//2:token_size] 
@@ -60,9 +116,9 @@ class ScoreModel(Process):
     def run(self):
         start_time = time.time()
         if(not self.model):
-            self.model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B").half().eval().to(f'cuda:{self.device}')
+            self.get_model()
         print(f'Model created in: {time.time() - start_time:06}s')
-        self.score(2048)
+        self.score(256)
 
 
 def parse_fn(example_proto):
