@@ -3,7 +3,6 @@ import torch
 import tensorflow as tf
 import numpy as np
 import time
-import random
 import wandb
 from memorization_metric import memorization_metric
 import argparse
@@ -74,7 +73,7 @@ class ScoreModel(Process):
         if(not self.model):
             self.get_model()
         print(f'Model created in: {time.time() - start_time:06}s')
-        self.score(256)
+        self.score(self.token_size)
 
 
 def parse_fn(example_proto):
@@ -92,13 +91,17 @@ def parse_fn(example_proto):
 if __name__ == '__main__':
     BATCH_SIZE = 8
     DEVICES = torch.cuda.device_count()
+    TOKEN_SIZE = 64
+    RESULTS_PATH = 'temp.tfrecords' #use gcs path if you want to store them somewhere else
+    
     set_start_method('spawn')
     args = parse_args()
+    
     if(args.wandb_project_name):
         wandb.init(project=args.wandb_project_name)
     
     #Loading model on eight cuda devices
-    models = [ScoreModel(i) for i in range(DEVICES)]
+    models = [ScoreModel(i,TOKEN_SIZE) for i in range(DEVICES)]
     [model.start() for model in models]
 
 
@@ -122,5 +125,5 @@ if __name__ == '__main__':
                 wandb.log({'memorization_metric':np.average(x)},step)
     
     #Deleting models
-    [model.sender.send(None)]
+    [model.sender.send(None) for model in models]
     [model.join() for model in models] 
