@@ -18,3 +18,13 @@ To support this effort, we have made several trained model checkpoints publicly 
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 |               | 512        | 28         |           |           |                   |                    |     | 256      |
 | 6,053,381,344 | 512        | 28         | 4,096     | 16        | 16                | 1                  | 16  | 256      |
+
+<br><br>
+
+## Evaluation details
+* The scripts `evaluation_script.py` and `evaluation_script_single_model.py` evaluate the memorization of input tfrecords based on the memorization metric
+* `evaluation_script.py` spawns several instances of GPT-J on various subprocesses. tensors are communicated through multiprocess.Pipe()
+* `evaluation_script_single_model.py` parallelizes GPT-J on all available GPUS.
+* Scripts have the following arguments:
+    * `--tfrecord-index` : index file containing a list of tfrecord file paths
+    * `--wandb-project-name` : wandb project name for the current run
