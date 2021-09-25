@@ -1,129 +1,106 @@
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from tqdm import tqdm
 import torch
 import tensorflow as tf
 import numpy as np
-import time
 import wandb
 from memorization_metric import memorization_metric
 import argparse
-from tqdm import tqdm
-from multiprocessing import Process,Pipe,set_start_method
 from result_records import TFrecordCreator
+from dataset_loader import build_train_dataset
+from threading import Thread
+import queue
+import torch.distributed as dist
+import os
+import time
 
-try:
-    from collections.abc import MutableMapping
-except ImportError:
-    from collections import MutableMapping
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Evaluates the memorization of input tfrecords based on the memorization metric')
-    parser.add_argument('--tfrecord-index',help='index file containing a list of tfrecord file paths')
     parser.add_argument('--wandb-project-name',help='wandb project name for the current run')
     return parser.parse_args()
 
-
-def get_dataset_paths(args):
-    '''
-    Gets all tfrecord paths from the given index file
-
-    Raises ValueError if it is not provided
-    '''
-    if(args.tfrecord_index):
-        with open(args.tfrecord_index) as file:
-            for path in file.read().splitlines():
-                yield path
-    else:
-        raise ValueError("No tfrecord index file provided. Pleas provide a file to continue")
-
-
-class ScoreModel(Process):
-    """Parallelizes evaluation of the records
-
-    Creates a saperate spawned process for each model. 
-    Data is sent and recieved through multiprocessing.Pipe()
-    This runs indefinitely once started
-    """
-    def __init__(self,device,token_size=256):
-        self.token_size = token_size
-        self.device = device
-        self.model = None
-        self.reciever, self.sender = Pipe() #Tensors are sent and recieved through Pipe()
+class BatchedDataset(Thread):
+    def __init__(self,batch_size,take_every,q):
         super().__init__()
-    
-    def get_model(self):
-        self.model = AutoModelForCausalLM.from_pretrained('EleutherAI/gpt-j-6B').to(f'cuda:{self.device}')
-    def score(self,token_size):
-        '''Evaluates the memorization metric of data from the Pipe()
-
-        > Data input consists is a batched tensor of shape (batch_size,token_size)
-        > uitlizes first token_size//2 tokens to generate next token_size//2 tokens and evaluates them
-        '''
-        while(True):
-            inp_tensor = self.reciever.recv()
-            if(inp_tensor is None):
-                break
-            inp = inp_tensor[:,:token_size//2].to(f'cuda:{self.device}')
-            ground_truth = inp_tensor[:,token_size//2:token_size].to(f'cuda:{self.device}')
-
-            res = self.model.generate(inp,do_sample=False, temperature=0.9,use_cache=False, min_length=token_size,max_length=token_size)[:,token_size//2:token_size] 
-
-            self.reciever.send(memorization_metric(ground_truth,res).cpu().numpy())
+        self.batch_size = batch_size
+        self.take_every = take_every
+        self.q = q
     def run(self):
-        start_time = time.time()
-        if(not self.model):
-            self.get_model()
-        print(f'Model created in: {time.time() - start_time:06}s')
-        self.score(self.token_size)
+        ds = build_train_dataset(
+                    data_prefix="/mnt/ssd-1/data/pile/pile_text_document",
+                    data_impl="mmap",
+                    splits_string="949,50,1",
+                    train_valid_test_num_samples=[self.batch_size, 0, 0],
+                    seq_length=2048,
+                    seed=1234, #Default seed
+                    skip_warmup=True
+                )
+        tokens = []
+        indicies = []
+        val = 1
+        idx = 0
+        for i in ds:
+            idx += 1
+            if(idx%self.take_every != 0):
+                continue
+            tokens.append(i['text'][:TOKEN_SIZE])
+            indicies.append(idx)
+            if(val%self.batch_size == 0):
+                self.q.put((np.asarray(tokens).reshape((self.batch_size,-1)),indicies))
+                indicies = []
+                tokens = []
+            val += 1
+        self.q.put((None,None))
+        self.q.task_done()
 
 
-def parse_fn(example_proto):
+
+def score(model,data,token_size=64):
+    '''Calculates the memorization metric for the given input tokens
     '''
-    Converts a tfrecord proto to a tensor of shape (2048,)
-    '''
-    features = {
-        "text": tf.io.VarLenFeature(tf.int64)
-    }
-    parsed_features = tf.io.parse_single_example(example_proto, features)
-
-    return tf.cast(tf.sparse.to_dense(tf.sparse.reorder(parsed_features["text"])), tf.uint32)
-
+    inp_tensor = data
+    inp = inp_tensor[:,:token_size//2].cuda()
+    ground_truth = inp_tensor[:,token_size//2:token_size].cuda()
+    res = model.generate(inp,do_sample=False, temperature=0.9, min_length=token_size,max_length=token_size)[:,token_size//2:token_size]
+    return memorization_metric(ground_truth,res).cpu().numpy()
 
 if __name__ == '__main__':
-    BATCH_SIZE = 8
-    DEVICES = torch.cuda.device_count()
-    TOKEN_SIZE = 64
-    RESULTS_PATH = 'temp.tfrecords' #use gcs path if you want to store them somewhere else
-    
-    set_start_method('spawn')
+    BATCH_SIZE = 500
+    RESULTS_PATH = 'memorization_results.tfrecords' #use gcs path if you want to store them somewhere else
+    TOKEN_SIZE = 128
+    TAKE_EVERY = 100
     args = parse_args()
-    
     if(args.wandb_project_name):
         wandb.init(project=args.wandb_project_name)
+        wandb.config.batch_size = BATCH_SIZE
+        wandb.config.token_size = TOKEN_SIZE
+        wandb.config.take_every = TAKE_EVERY
     
-    #Loading model on eight cuda devices
-    models = [ScoreModel(i,TOKEN_SIZE) for i in range(DEVICES)]
-    [model.start() for model in models]
+    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B").half().eval()
+    model.parallelize()
 
-
-    records = TFrecordCreator(RESULTS_PATH)
+    records = TFrecordCreator(RESULTS_PATH) #store results
     step = 1
-    for path in get_dataset_paths(args):
-        ds = tf.data.TFRecordDataset(path).map(parse_fn, num_parallel_calls=tf.data.AUTOTUNE).batch(BATCH_SIZE).batch(DEVICES)
-        for batch in tqdm(iter(ds)):
-            batch = batch.numpy()
-            
-            res = [0]*DEVICES
-            [model.sender.send(torch.tensor(batch[i],dtype=torch.int32)) for model in models]
-            for i in range(DEVICES):
-                res[i] = models[i].sender.recv()
-            
-            res = np.asarray(res).flatten() 
-            for i in res:
-                records.write(i)
-            
-            if(args.wandb_project_name):
-                wandb.log({'memorization_metric':np.average(x)},step)
-    
-    #Deleting models
-    [model.sender.send(None) for model in models]
-    [model.join() for model in models] 
+
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group("gloo",rank=0,world_size=1)
+    rec_queue = queue.Queue()
+    ds = BatchedDataset(BATCH_SIZE,TAKE_EVERY,rec_queue)
+    ds.start()
+    start_time = time.time()
+    batch,indicies = rec_queue.get()
+    while(batch is not None):
+        batch = torch.tensor(batch,dtype=torch.int32,requires_grad=False)
+        res = score(model,batch,TOKEN_SIZE)
+        
+        for i,j in zip(res,indicies):
+            records.write(i,j)
+        if(args.wandb_project_name):
+            wandb.log({'memorization_metric':np.average(res)})
+        print(f'{time.time() - start_time:3}s')
+        start_time = time.time()
+        batch,indicies = rec_queue.get()
+        step += 1
+    records.close()

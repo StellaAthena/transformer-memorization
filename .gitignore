@@ -132,3 +132,6 @@ dmypy.json
 *.tfrecord
 *.tfrecords
 *.tfrec
+
+#wandb files
+wandb/
