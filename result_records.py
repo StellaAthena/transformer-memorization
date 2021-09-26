@@ -11,12 +11,16 @@ class TFrecordCreator:
         """Returns an int64_list from a bool / enum / int / uint."""
         return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
     
+    def _float_feature(self,value):
+        """Returns a float_list from a float / double."""
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+    
     def _serialize_example(self,result,index):
         """
         Creates a tf.train.Example message ready to be written to a file.
         """
         feature = {
-            'result':self._int64_feature(result),
+            'result':self._float_feature(result),
             'index':self._int64_feature(index)
         }
         
@@ -46,7 +50,7 @@ class TFRecordLoader:
     def _parse_fn(self,example_proto):
 
         feature_description = {
-            'result':tf.io.FixedLenFeature([], tf.int64, default_value=0),
+            'result':tf.io.FixedLenFeature([], tf.float32, default_value=0.0),
             'index':tf.io.FixedLenFeature([], tf.int64, default_value=0)
         }
         res =  tf.io.parse_single_example(example_proto, feature_description)
@@ -57,7 +61,7 @@ class TFRecordLoader:
 if __name__ == '__main__':
     rec = TFrecordCreator('temp.tfrecord')
     for i in range(10):
-        rec.write(i,i)
+        rec.write(float(i),i)
     
     rec.close()
     reader = TFRecordLoader('temp.tfrecord')

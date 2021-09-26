@@ -59,46 +59,55 @@ class BatchedDataset(Thread):
 def score(model,data,token_size=64):
     '''Calculates the memorization metric for the given input tokens
     '''
-    inp_tensor = data
+    inp_tensor = data[:,:token_size]
     inp = inp_tensor[:,:token_size//2].cuda()
-    ground_truth = inp_tensor[:,token_size//2:token_size].cuda()
-    res = model.generate(inp,do_sample=False, temperature=0.9, min_length=token_size,max_length=token_size)[:,token_size//2:token_size]
-    return memorization_metric(ground_truth,res).cpu().numpy()
+    res = model.generate(inp,do_sample=False,use_cache=False, temperature=0.9, min_length=token_size,max_length=token_size,return_dict_in_generate=True,output_scores=True).scores
+    return memorization_metric(res,inp_tensor[:,token_size//2:token_size])
 
 if __name__ == '__main__':
-    BATCH_SIZE = 500
-    RESULTS_PATH = 'memorization_results.tfrecords' #use gcs path if you want to store them somewhere else
-    TOKEN_SIZE = 128
-    TAKE_EVERY = 100
+    BATCH_SIZE = 100
+    RESULTS_PATH = 'memorization_results.tfrecords'
+    TOKEN_SIZE = 64
+    TAKE_EVERY = 500
+    
     args = parse_args()
     if(args.wandb_project_name):
         wandb.init(project=args.wandb_project_name)
         wandb.config.batch_size = BATCH_SIZE
         wandb.config.token_size = TOKEN_SIZE
         wandb.config.take_every = TAKE_EVERY
-    
-    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B").half().eval()
-    model.parallelize()
 
     records = TFrecordCreator(RESULTS_PATH) #store results
-    step = 1
 
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group("gloo",rank=0,world_size=1)
+    
     rec_queue = queue.Queue()
     ds = BatchedDataset(BATCH_SIZE,TAKE_EVERY,rec_queue)
     ds.start()
+
+    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B").half().eval()
+    model.parallelize({
+        0:[0], #using least possible number of layers to accomodate for storing model scores
+        1:list(range(1,10)),
+        2:list(range(10,19)),
+        3:list(range(19,28))
+    })
+
     start_time = time.time()
     batch,indicies = rec_queue.get()
+    step = 1
     while(batch is not None):
         batch = torch.tensor(batch,dtype=torch.int32,requires_grad=False)
         res = score(model,batch,TOKEN_SIZE)
-        
+        print(res)
         for i,j in zip(res,indicies):
             records.write(i,j)
+        
         if(args.wandb_project_name):
-            wandb.log({'memorization_metric':np.average(res)})
+            wandb.log({'memorization_metric':numpy.ma.masked_invalid(res).mean(),"index":indicies[-1]})
+        
         print(f'{time.time() - start_time:3}s')
         start_time = time.time()
         batch,indicies = rec_queue.get()
