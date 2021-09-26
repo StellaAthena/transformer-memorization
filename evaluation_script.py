@@ -106,7 +106,7 @@ if __name__ == '__main__':
             records.write(i,j)
         
         if(args.wandb_project_name):
-            wandb.log({'memorization_metric':numpy.ma.masked_invalid(res).mean(),"index":indicies[-1]})
+            wandb.log({'memorization_metric':np.ma.masked_invalid(res).mean(),"index":indicies[-1]})
         
         print(f'{time.time() - start_time:3}s')
         start_time = time.time()
