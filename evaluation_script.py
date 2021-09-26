@@ -101,7 +101,6 @@ if __name__ == '__main__':
     while(batch is not None):
         batch = torch.tensor(batch,dtype=torch.int32,requires_grad=False)
         res = score(model,batch,TOKEN_SIZE)
-        print(res)
         for i,j in zip(res,indicies):
             records.write(i,j)
         
