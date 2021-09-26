@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 import torch
