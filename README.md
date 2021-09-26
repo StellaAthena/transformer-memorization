@@ -22,6 +22,6 @@ To support this effort, we have made several trained model checkpoints publicly 
 <br><br>
 
 ## Evaluation details
-* The scripts `evaluation_script.py` and `evaluation_script_single_model.py` evaluate the memorization of input tfrecords based on the memorization metric
+* The script `evaluation_script.py` evaluates the memorization of input tfrecords based on the memorization metric
 * Scripts have the following arguments:
     * `--wandb-project-name` : wandb project name for the current run
