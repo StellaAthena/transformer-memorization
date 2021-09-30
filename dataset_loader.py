@@ -249,8 +249,8 @@ class GPT2Dataset(torch.utils.data.Dataset):
             return {'text': np.array(sample, dtype=np.int64)}
         except IndexError:
             new_idx = idx % len(self)
-            print(f'WARNING: Got index out of bounds error with index {idx} - taking modulo of index instead ({new_idx})')
-            return self[new_idx]
+            print(f'ERROR: Got index out of bounds error with index {idx} - taking modulo of index instead ({new_idx})')
+            raise IndexError
 
 class MMapIndexedDataset(torch.utils.data.Dataset):
     class Index(object):

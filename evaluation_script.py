@@ -31,7 +31,7 @@ class BatchedDataset(Thread):
                     data_prefix="/mnt/ssd-1/data/pile/pile_text_document",
                     data_impl="mmap",
                     splits_string="949,50,1",
-                    train_valid_test_num_samples=[self.batch_size, 0, 0],
+                    train_valid_test_num_samples=[173476674, 0, 0],
                     seq_length=2048,
                     seed=1234, #Default seed
                     skip_warmup=True
