@@ -5,3 +5,5 @@ lm-dataformat
 transformers
 knowledge-neurons
 lm-eval
+tensorflow-cpu
+wandb
