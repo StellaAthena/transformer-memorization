@@ -68,7 +68,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 100
     RESULTS_PATH = 'memorization_results.tfrecords'
     TOKEN_SIZE = 64
-    TAKE_EVERY = 1
+    TAKE_EVERY = 10
     
     args = parse_args()
     if(args.wandb_project_name):
