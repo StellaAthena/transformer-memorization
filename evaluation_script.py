@@ -68,7 +68,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 100
     RESULTS_PATH = 'memorization_results.tfrecords'
     TOKEN_SIZE = 64
-    TAKE_EVERY = 250
+    TAKE_EVERY = 1
     
     args = parse_args()
     if(args.wandb_project_name):
@@ -87,7 +87,7 @@ if __name__ == '__main__':
     ds = BatchedDataset(BATCH_SIZE,TAKE_EVERY,rec_queue)
     ds.start()
 
-    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B").half().eval()
+    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B", revision="float16", torch_dtype=torch.float16, low_cpu_mem_usage=True).eval()
     model.parallelize({
         0:[0], #using least possible number of layers to accomodate for storing model scores
         1:list(range(1,10)),

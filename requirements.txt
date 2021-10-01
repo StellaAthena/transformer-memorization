@@ -1,6 +1,6 @@
 numpy
 matplotlib
-torch
+torch>=1.9
 lm-dataformat
 transformers
 knowledge-neurons
