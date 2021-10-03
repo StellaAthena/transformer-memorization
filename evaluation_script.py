@@ -29,11 +29,6 @@ class BatchedDataset(Thread):
     def run(self):
         ds = build_train_dataset(
                     data_prefix="/mnt/ssd-1/data/pile/pile_text_document",
-                    data_impl="mmap",
-                    splits_string="949,50,1",
-                    train_valid_test_num_samples=[173476674, 0, 0],
-                    seq_length=2048,
-                    seed=1234, #Default seed
                     skip_warmup=True
                 )
         tokens = []
@@ -42,12 +37,12 @@ class BatchedDataset(Thread):
         idx = 0
         for i in ds:
             idx += 1
-            if(idx%self.take_every != 0):
+            if(idx%self.take_every != 0 or i.shape[0] < TOKEN_SIZE):
                 continue
-            tokens.append(i['text'][:TOKEN_SIZE])
+            tokens.append(i[:TOKEN_SIZE].astype(np.int32))
             indicies.append(idx)
             if(val%self.batch_size == 0):
-                self.q.put((np.asarray(tokens).reshape((self.batch_size,-1)),indicies))
+                self.q.put((np.asarray(tokens),indicies))
                 indicies = []
                 tokens = []
             val += 1
