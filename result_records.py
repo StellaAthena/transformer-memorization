@@ -68,3 +68,6 @@ if __name__ == '__main__':
     for i in reader:
         res,idx = i
         print(res.numpy(),idx.numpy())
+    
+    import os
+    os.remove('temp.tfrecord')
